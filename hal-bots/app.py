@@ -10,7 +10,7 @@ import io
 # 📝 ÉTAPE 1 : CONFIGURATION DES REVUES CIBLÉES
 # =========================================================
 
-# Liste des revues souvent associées à des dépôts "sauvages" (extraite de vos scripts initiaux)
+# Liste des revues repérées comme potentiellement problématiques
 JOURNAL_LIST = [
     "Advances in Research on Teaching", "Archives of Current Research International", "Asian Basic and Applied Research Journal",
     "Asian Food Science Journal", "Asian Journal of Advanced Research and Reports", "Asian Journal of Advances in Agricultural Research",
@@ -198,12 +198,12 @@ def get_monthly_analysis(docs, start_date_str="2025-01-01"):
 # =========================================================
 
 def app():
-    st.set_page_config(layout="wide", page_title="Détection des Dépôts HAL Douteux")
-    st.title("🤖 Détection des Dépôts HAL Douteux (Bots)")
+    st.set_page_config(layout="wide", page_title="Détection de dépôts HAL douteux")
+    st.title("🤖 Détection de dépôts HAL douteux")
     st.markdown("---")
 
     # --- 1. Sélection des Revues ---
-    st.header("📝 Sélection des Revues pour l'Analyse")
+    st.header("📝 Sélection des revues pour l'analyse")
     st.info("Utilisez ce sélecteur pour définir le périmètre de la recherche de dépôts douteux sur HAL.")
     
     # Gestion du state pour le bouton 'Tout sélectionner'
@@ -226,7 +226,7 @@ def app():
     st.markdown("---")
 
     # --- 2. Lancement de l'Analyse Globale ---
-    st.header("🔍 Lancement de l'Analyse sur l'Ensemble de HAL")
+    st.header("🔍 Lancement de l'analyse")
 
     st.warning(f"""
     Attention : Vous avez sélectionné **{len(selected_journals)}** revue(s). 
@@ -235,7 +235,7 @@ def app():
     
     if st.button("Lancer l'Analyse Globale des Revues Sélectionnées", disabled=(not selected_journals)):
         
-        with st.spinner("Interrogation de l'API HAL pour l'ensemble du dépôt..."):
+        with st.spinner("Interrogation de l'API HAL..."):
             docs = get_hal_publications_global(selected_journals)
 
         if not docs:
@@ -267,7 +267,7 @@ def app():
         st.markdown("---")
 
         # --- 4. Analyse Mensuelle (Pics d'Activité) ---
-        st.header("📈 Analyse Temporelle des Dépôts (Pics d'Activité)")
+        st.header("📈 Analyse temporelle des dépôts ")
         
         # Définition de la date de début pour le filtrage (Janvier 2025)
         START_DATE_FILTER = "2025-01-01"
@@ -278,7 +278,7 @@ def app():
         image_bytes, df_monthly = get_monthly_analysis(docs, start_date_str=START_DATE_FILTER)
         
         if image_bytes:
-            st.subheader("Nombre de Dépôts par Mois")
+            st.subheader("Nombre de dépôts par mois")
             st.image(image_bytes, caption=f'Historique des dépôts par mois depuis {START_DATE_FILTER}')
 
             st.subheader("Données Mensuelles Brutes")
@@ -286,7 +286,7 @@ def app():
 
             csv_monthly = df_monthly.to_csv(index=False).encode('utf-8')
             st.download_button(
-                label="Télécharger les données Mensuelles (CSV)",
+                label="Télécharger les données mensuelles (CSV)",
                 data=csv_monthly,
                 file_name=f'depots_mensuels_douteux_HAL_FILTRE.csv',
                 mime='text/csv',
@@ -296,7 +296,7 @@ def app():
         st.markdown("---")
 
         # --- 5. Liste des Publications (Détail) ---
-        st.header("📄 Liste Complète des Publications Trouvées")
+        st.header("📄 Liste des publications trouvées")
         
         data_for_df = []
         for doc in docs:
