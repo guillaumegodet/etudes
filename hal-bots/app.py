@@ -7,59 +7,68 @@ import matplotlib.pyplot as plt
 import io
 
 # =========================================================
-# 📝 ÉTAPE 1 : CONFIGURATION (À MODIFIER PAR VOS SOINS)
+# 📝 ÉTAPE 1 : CONFIGURATION DES REVUES CIBLÉES
 # =========================================================
 
-# Liste des revues souvent associées à des dépôts "sauvages" (extraite de vos scripts)
+# Liste des revues souvent associées à des dépôts "sauvages" (extraite de vos scripts initiaux)
 JOURNAL_LIST = [
     "Advances in Research on Teaching",
     "Archives of Current Research International",
-    "Asian Basic and Applied Research Journal",
-    "Asian Food Science Journal",
- 
+    
 ]
 
 # =========================================================
-#⚙️ ÉTAPE 2 : FONCTIONS D'INTERROGATION HAL
+# ⚙️ ÉTAPE 2 : FONCTIONS D'INTERROGATION HAL (MODE GLOBAL)
 # =========================================================
 
 @st.cache_data(ttl=3600)
-def get_hal_publications_by_collection(collection, journals):
-    """Interroge l'API HAL pour les publications d'une collection dans une liste de revues."""
-    base_url = f"https://api.archives-ouvertes.fr/search/{collection}"
+def get_hal_publications_global(journals):
+    """
+    Interroge l'API HAL pour les publications de TOUT HAL dans une liste de revues.
+    """
+    base_url = "https://api.archives-ouvertes.fr/search"
     all_docs = []
     
     status_text = st.empty()
+    total_found = 0
 
     for i, journal_title in enumerate(journals):
-        status_text.text(f"Recherche dans la collection '{collection}'... (Revue {i+1}/{len(journals)}: {journal_title})")
+        # Message de statut mis à jour
+        status_text.text(f"Recherche dans TOUT HAL... (Revue {i+1}/{len(journals)}: {journal_title})") 
 
         query = f'journalTitle_s:("{journal_title}")'
         params = {
             'q': query,
-            'rows': 100,
+            # Augmentation de 'rows' (nombre de résultats par requête) pour une recherche plus large.
+            'rows': 1000, 
             'fl': 'halId_s,title_s,contributorFullName_s,submittedDate_s,contributorId_i'
         }
 
         try:
-            response = requests.get(base_url, params=params, timeout=10)
+            # Augmentation du timeout
+            response = requests.get(base_url, params=params, timeout=20) 
             response.raise_for_status()
             data = response.json()
             docs = data.get('response', {}).get('docs', [])
+            num_found = data.get('response', {}).get('numFound', 0)
             
             if docs:
                 for doc in docs:
                     doc['journal'] = journal_title
                 all_docs.extend(docs)
+                total_found += len(docs)
+                
+            # Afficher le nombre total de résultats pour cette revue
+            status_text.caption(f"  -> {num_found} résultat(s) total pour '{journal_title}'.")
                 
         except requests.exceptions.RequestException as e:
             st.error(f"Erreur lors de la requête pour '{journal_title}': {e}")
-            break
-
-        time.sleep(0.5)
+            
+        time.sleep(1) # Délai pour ne pas surcharger l'API de HAL
     
-    status_text.text(f"Recherche terminée. {len(all_docs)} dépôt(s) trouvé(s) dans la collection '{collection}'.")
+    status_text.success(f"Recherche globale terminée. {len(all_docs)} dépôt(s) récupéré(s) (parmi {total_found} trouvés) pour les revues ciblées dans tout HAL.")
     return all_docs
+
 
 def get_contributors_analysis(docs):
     """Analyse les contributeurs à partir des documents HAL."""
@@ -140,42 +149,37 @@ def app():
     st.markdown("---")
 
     # --- 1. Explication du Problème ---
-    st.header("💡 Principe de la Détection")
+    st.header("💡 Principe de la Détection (Mode Global)")
     st.markdown("""
-    Cette application utilise la liste de revues considérées comme des **'revues pirates' ou à faible qualité** pour repérer les dépôts qui y sont associés dans votre collection HAL.
-    
-    La présence de dépôts dans ces revues, souvent automatisés par des **bots**, se manifeste par deux principaux indicateurs :
-    1.  **Des contributeurs uniques** ayant un nombre très élevé de dépôts sur une courte période.
-    2.  **Des pics d'activité** dans le temps, correspondant au lancement des scripts de dépôt.
+    Cette application interroge l'**ensemble du dépôt HAL** pour trouver des publications dans des revues suspectes. Les indicateurs de dépôts automatisés par des bots sont recherchés :
+    1.  **Contributeurs hyper-productifs** (avec un nombre anormalement élevé de contributions).
+    2.  **Pics d'activité soudains** dans l'historique de dépôt.
     """)
     
-    with st.expander("Voir la liste des revues ciblées (liste fournie par les scripts initiaux)"):
-        st.dataframe(pd.DataFrame(JOURNAL_LIST, columns=['Titre de la Revue Ciblée']))
+    with st.expander("Voir la liste des revues ciblées (revues souvent associées à des dépôts 'sauvages')"):
+        st.dataframe(pd.DataFrame(JOURNAL_LIST, columns=['Titre de la Revue Ciblée']), use_container_width=True)
 
     st.markdown("---")
 
-    # --- 2. Configuration et Lancement ---
-    st.header("🔍 Recherche dans votre Collection HAL")
+    # --- 2. Lancement de l'Analyse Globale ---
+    st.header("🔍 Lancement de l'Analyse sur l'Ensemble de HAL")
 
-    # Utilisation du nom de collection du script 'depotssauvagesparcollection.py' comme valeur par défaut
-    collection_name = st.text_input(
-        "Entrez le nom de votre collection HAL :",
-        value="" 
-    ).strip().upper()
+    st.warning("""
+    Attention : Cette analyse cible l'ensemble du dépôt HAL. 
+    L'opération peut prendre **plusieurs minutes** (environ 1-2 minutes) car elle interroge de nombreuses revues avec un délai pour respecter les limites de l'API.
+    """)
     
-    if st.button("Lancer l'Analyse"):
-        if not collection_name:
-            st.error("Veuillez entrer le nom d'une collection HAL.")
-            return
-
-        with st.spinner(f"Interrogation de l'API HAL pour la collection **{collection_name}**... (Cela peut prendre plusieurs minutes)"):
-            docs = get_hal_publications_by_collection(collection_name, JOURNAL_LIST)
+    if st.button("Lancer l'Analyse Globale"):
+        
+        with st.spinner("Interrogation de l'API HAL pour l'ensemble du dépôt..."):
+            # Appel à la fonction globale
+            docs = get_hal_publications_global(JOURNAL_LIST)
 
         if not docs:
-            st.success(f"🎉 Aucune publication trouvée dans la collection **{collection_name}** pour les revues ciblées.")
+            st.success("🎉 Aucune publication trouvée sur TOUT HAL pour les revues ciblées.")
             return
 
-        st.success(f"✅ **{len(docs)}** dépôt(s) trouvé(s) dans la collection **{collection_name}**.")
+        st.success(f"✅ **{len(docs)}** dépôt(s) trouvé(s) sur l'ensemble de HAL.")
         st.markdown("---")
         
         # --- 3. Analyse des Contributeurs (Détection de Bot) ---
@@ -193,7 +197,7 @@ def app():
         st.download_button(
             label="Télécharger les données des Contributeurs (CSV)",
             data=csv_cont,
-            file_name=f'contributeurs_douteux_{collection_name}.csv',
+            file_name=f'contributeurs_douteux_HAL_GLOBAL.csv',
             mime='text/csv',
         )
 
@@ -216,7 +220,7 @@ def app():
             st.download_button(
                 label="Télécharger les données Mensuelles (CSV)",
                 data=csv_monthly,
-                file_name=f'depots_mensuels_douteux_{collection_name}.csv',
+                file_name=f'depots_mensuels_douteux_HAL_GLOBAL.csv',
                 mime='text/csv',
             )
         else:
@@ -244,7 +248,7 @@ def app():
         st.download_button(
             label="Télécharger la Liste des Publications (CSV)",
             data=csv_pub,
-            file_name=f'publications_douteuses_{collection_name}.csv',
+            file_name=f'publications_douteuses_HAL_GLOBAL.csv',
             mime='text/csv',
         )
 
