@@ -319,7 +319,7 @@ def app():
 
         st.markdown("---")
 
-        # --- 5. Liste des Publications (Détail) ---
+      # --- 5. Liste des Publications (Détail) ---
         st.header("📄 Liste Complète des Publications Trouvées")
         
         # Préparation des données pour l'affichage détaillé
@@ -327,9 +327,19 @@ def app():
             'Titre': doc.get('title_s', ['(Titre non disponible)'])[0],
             'HAL ID': doc.get('halId_s', 'N/A'),
             'Revues': doc.get('journal', 'N/A'),
-            'Contributeurs': ', '.join(doc.get('contributorFullName_s', ['Auteurs non disponibles'])),
+            
+            # --- CORRECTION APPORTÉE ICI ---
+            'Contributeurs': ', '.join(
+                # 1. Récupère la valeur, ou une liste par défaut si absente
+                names if isinstance(names, list) else ([names] if names else ['Auteurs non disponibles'])
+            )
+            for names in [doc.get('contributorFullName_s', ['Auteurs non disponibles'])], # Simuler une boucle pour récupérer 'names'
+            # --- FIN DE CORRECTION ---
+            
             'Date Soumission': doc.get('submittedDate_s', 'N/A'),
             'Lien HAL': f"https://hal.science/{doc.get('halId_s')}" if doc.get('halId_s') else 'N/A'
+             
+      
         } for doc in docs])
 
         st.dataframe(df_publications, use_container_width=True, 
