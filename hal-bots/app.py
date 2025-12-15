@@ -61,8 +61,11 @@ JOURNAL_LIST = [
 @st.cache_data(ttl=3600)
 def get_hal_publications_global(journals):
     """
-    Interroge l'API HAL pour les publications de TOUT HAL dans une liste de revues.
+    Interroge l'API HAL pour les publications de TOUT HAL dans une liste de revues (filtrée).
     """
+    if not journals:
+        return []
+
     base_url = "https://api.archives-ouvertes.fr/search"
     all_docs = []
     
@@ -99,7 +102,7 @@ def get_hal_publications_global(journals):
             
         time.sleep(1)
     
-    status_text.success(f"Recherche globale terminée. {len(all_docs)} dépôt(s) récupéré(s) (parmi {total_found} trouvés) pour les revues ciblées dans tout HAL.")
+    status_text.success(f"Recherche globale terminée. {len(all_docs)} dépôt(s) récupéré(s) (parmi {total_found} trouvés) pour les {len(journals)} revues sélectionnées dans tout HAL.")
     return all_docs
 
 
@@ -112,7 +115,6 @@ def get_contributors_analysis(docs):
         ids = doc.get('contributorId_i')
         journal = doc.get('journal', 'N/A')
 
-        # S'assurer que names et ids sont des listes pour l'itération
         if not isinstance(names, (list, tuple)):
             names = [names] if names is not None else []
         if not isinstance(ids, (list, tuple)):
@@ -140,18 +142,37 @@ def get_contributors_analysis(docs):
 
     return pd.DataFrame(data_list)
 
-def get_monthly_analysis(docs):
-    """Analyse les dépôts par mois et génère le graphique."""
+
+def get_monthly_analysis(docs, start_date_str="2025-01-01"):
+    """
+    Analyse les dépôts par mois à partir d'une date de début spécifiée et génère le graphique.
+    """
     all_dates = [doc.get('submittedDate_s') for doc in docs if doc.get('submittedDate_s')]
     
     if not all_dates:
         return None, None
 
     df = pd.DataFrame(all_dates, columns=['submittedDate'])
-    df['submittedDate'] = pd.to_datetime(df['submittedDate'])
-    df['year_month'] = df['submittedDate'].dt.to_period('M')
+    df.dropna(subset=['submittedDate'], inplace=True)
     
-    monthly_counts = df['year_month'].value_counts().sort_index()
+    # 1. Conversion en datetime
+    df['submittedDate'] = pd.to_datetime(df['submittedDate'])
+    
+    # 2. Définir la date de début du filtre
+    start_date = pd.to_datetime(start_date_str)
+    
+    # 3. FILTRAGE : Conserver uniquement les dates égales ou postérieures à la date de début
+    df_filtered = df[df['submittedDate'] >= start_date].copy()
+    
+    if df_filtered.empty:
+        st.warning(f"Aucun dépôt trouvé à partir du {start_date_str}.")
+        return None, None
+
+    # 4. Extraction du mois et de l'année pour le groupement
+    df_filtered['year_month'] = df_filtered['submittedDate'].dt.to_period('M')
+    
+    # 5. Comptage des dépôts par mois
+    monthly_counts = df_filtered['year_month'].value_counts().sort_index()
     
     if monthly_counts.empty:
         return None, None
@@ -159,14 +180,13 @@ def get_monthly_analysis(docs):
     # Création du graphique
     fig, ax = plt.subplots(figsize=(15, 8))
     monthly_counts.plot(kind='bar', color='skyblue', ax=ax)
-    ax.set_title('Nombre de dépôts par mois (Toutes Revues Confondues)', fontsize=18, pad=20)
+    ax.set_title(f'Nombre de dépôts par mois (Revues Sélectionnées, Depuis {start_date_str})', fontsize=18, pad=20)
     ax.set_xlabel('Mois et Année', fontsize=14, labelpad=15)
     ax.set_ylabel('Nombre de dépôts', fontsize=14, labelpad=15)
     plt.xticks(rotation=45, ha='right')
     plt.tight_layout()
     plt.grid(axis='y', linestyle='--', alpha=0.7)
     
-    # Pour afficher l'image directement dans Streamlit
     buf = io.BytesIO()
     fig.savefig(buf, format="png")
     plt.close(fig) 
@@ -182,37 +202,47 @@ def app():
     st.title("🤖 Détection des Dépôts HAL Douteux (Bots)")
     st.markdown("---")
 
-    # --- 1. Explication du Problème ---
-    st.header("💡 Principe de la Détection (Mode Global)")
-    st.markdown("""
-    Cette application interroge l'**ensemble du dépôt HAL** pour trouver des publications dans des revues suspectes. Les indicateurs de dépôts automatisés par des bots sont recherchés :
-    1.  **Contributeurs hyper-productifs** (avec un nombre anormalement élevé de contributions).
-    2.  **Pics d'activité soudains** dans l'historique de dépôt.
-    """)
+    # --- 1. Sélection des Revues ---
+    st.header("📝 Sélection des Revues pour l'Analyse")
+    st.info("Utilisez ce sélecteur pour définir le périmètre de la recherche de dépôts douteux sur HAL.")
     
-    with st.expander("Voir la liste des revues ciblées (revues souvent associées à des dépôts 'sauvages')"):
-        st.dataframe(pd.DataFrame(JOURNAL_LIST, columns=['Titre de la Revue Ciblée']), use_container_width=True)
+    # Gestion du state pour le bouton 'Tout sélectionner'
+    if 'selected_journals' not in st.session_state:
+        st.session_state.selected_journals = JOURNAL_LIST[:10]
 
+    if st.button("Sélectionner toutes les revues"):
+        st.session_state.selected_journals = JOURNAL_LIST
+        
+    selected_journals = st.multiselect(
+        "Choisissez les revues à inclure dans la recherche :",
+        options=JOURNAL_LIST,
+        default=st.session_state.selected_journals,
+        key='selected_journals_multiselect' # Utiliser une clé différente pour le widget lui-même
+    )
+
+    if not selected_journals:
+        st.warning("Veuillez sélectionner au moins une revue pour lancer l'analyse.")
+        
     st.markdown("---")
 
     # --- 2. Lancement de l'Analyse Globale ---
     st.header("🔍 Lancement de l'Analyse sur l'Ensemble de HAL")
 
-    st.warning("""
-    Attention : Cette analyse cible l'ensemble du dépôt HAL. 
-    L'opération peut prendre **plusieurs minutes** car elle interroge de nombreuses revues avec un délai pour respecter les limites de l'API.
+    st.warning(f"""
+    Attention : Vous avez sélectionné **{len(selected_journals)}** revue(s). 
+    L'opération peut prendre du temps car elle interroge l'API HAL pour chaque revue sélectionnée.
     """)
     
-    if st.button("Lancer l'Analyse Globale"):
+    if st.button("Lancer l'Analyse Globale des Revues Sélectionnées", disabled=(not selected_journals)):
         
         with st.spinner("Interrogation de l'API HAL pour l'ensemble du dépôt..."):
-            docs = get_hal_publications_global(JOURNAL_LIST)
+            docs = get_hal_publications_global(selected_journals)
 
         if not docs:
-            st.success("🎉 Aucune publication trouvée sur TOUT HAL pour les revues ciblées.")
+            st.success(f"🎉 Aucune publication trouvée sur TOUT HAL pour les {len(selected_journals)} revues sélectionnées.")
             return
 
-        st.success(f"✅ **{len(docs)}** dépôt(s) trouvé(s) sur l'ensemble de HAL.")
+        st.success(f"✅ **{len(docs)}** dépôt(s) trouvé(s) pour les revues sélectionnées.")
         st.markdown("---")
         
         # --- 3. Analyse des Contributeurs (Détection de Bot) ---
@@ -230,7 +260,7 @@ def app():
         st.download_button(
             label="Télécharger les données des Contributeurs (CSV)",
             data=csv_cont,
-            file_name=f'contributeurs_douteux_HAL_GLOBAL.csv',
+            file_name=f'contributeurs_douteux_HAL_FILTRE.csv',
             mime='text/csv',
         )
 
@@ -239,12 +269,17 @@ def app():
         # --- 4. Analyse Mensuelle (Pics d'Activité) ---
         st.header("📈 Analyse Temporelle des Dépôts (Pics d'Activité)")
         
-        image_bytes, df_monthly = get_monthly_analysis(docs)
+        # Définition de la date de début pour le filtrage (Janvier 2025)
+        START_DATE_FILTER = "2025-01-01"
+        
+        st.info(f"Le graphique est filtré pour commencer à partir du **{START_DATE_FILTER}**.")
+        
+        # Appel de la fonction avec la date de début
+        image_bytes, df_monthly = get_monthly_analysis(docs, start_date_str=START_DATE_FILTER)
         
         if image_bytes:
             st.subheader("Nombre de Dépôts par Mois")
-            st.info("Des pics soudains et isolés peuvent indiquer une activité de bot concentrée dans le temps.")
-            st.image(image_bytes, caption='Historique des dépôts par mois')
+            st.image(image_bytes, caption=f'Historique des dépôts par mois depuis {START_DATE_FILTER}')
 
             st.subheader("Données Mensuelles Brutes")
             st.dataframe(df_monthly, use_container_width=True)
@@ -253,24 +288,20 @@ def app():
             st.download_button(
                 label="Télécharger les données Mensuelles (CSV)",
                 data=csv_monthly,
-                file_name=f'depots_mensuels_douteux_HAL_GLOBAL.csv',
+                file_name=f'depots_mensuels_douteux_HAL_FILTRE.csv',
                 mime='text/csv',
             )
-        else:
-            st.warning("Pas assez de données de date pour générer le graphique temporel.")
-
+        # La notification "Aucun dépôt trouvé..." est maintenant gérée dans get_monthly_analysis
+        
         st.markdown("---")
 
         # --- 5. Liste des Publications (Détail) ---
         st.header("📄 Liste Complète des Publications Trouvées")
         
-        # Préparation des données pour l'affichage détaillé
         data_for_df = []
         for doc in docs:
-            # CORRECTION DU PROBLÈME D'AFFICHAGE DES NOMS
             names = doc.get('contributorFullName_s', ['Auteurs non disponibles'])
             
-            # S'assurer que names est une liste pour l'opération .join()
             if isinstance(names, str):
                 names = [names]
             elif names is None:
@@ -280,7 +311,7 @@ def app():
                 'Titre': doc.get('title_s', ['(Titre non disponible)'])[0],
                 'HAL ID': doc.get('halId_s', 'N/A'),
                 'Revues': doc.get('journal', 'N/A'),
-                'Contributeurs': ', '.join(names), # Utilisation des noms corrigés
+                'Contributeurs': ', '.join(names), 
                 'Date Soumission': doc.get('submittedDate_s', 'N/A'),
                 'Lien HAL': f"https://hal.science/{doc.get('halId_s')}" if doc.get('halId_s') else 'N/A'
             })
@@ -294,7 +325,7 @@ def app():
         st.download_button(
             label="Télécharger la Liste des Publications (CSV)",
             data=csv_pub,
-            file_name=f'publications_douteuses_HAL_GLOBAL.csv',
+            file_name=f'publications_douteuses_HAL_FILTRE.csv',
             mime='text/csv',
         )
 
