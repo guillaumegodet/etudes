@@ -10,7 +10,7 @@ import io
 # 📝 ÉTAPE 1 : CONFIGURATION DES REVUES CIBLÉES
 # =========================================================
 
-# Liste des revues repérées comme potentiellement problématiques
+# Liste des revues souvent associées à des dépôts "sauvages" (extraite de vos scripts initiaux)
 JOURNAL_LIST = [
     "Advances in Research on Teaching", "Archives of Current Research International", "Asian Basic and Applied Research Journal",
     "Asian Food Science Journal", "Asian Journal of Advanced Research and Reports", "Asian Journal of Advances in Agricultural Research",
@@ -33,17 +33,18 @@ JOURNAL_LIST = [
     "Asian Research Journal of Agriculture", "Asian Research Journal of Arts & Social Sciences", "Asian Research Journal of Mathematics",
     "Cardiology and Angiology: An International Journal", "Chemical Science International Journal", "Current Journal of Applied Science and Technology",
     "European Journal of Nutrition and Food Safety", "International Journal of Advances in Nephrology Research",
-    "International Journal of Biochemistry Research & Review", "International Journal of Environment and Climate Change",
-    "International Journal of Hematology-Oncology and Stem Cell Research", "International Journal of Medical and Pharmaceutical Case Reports",
-    "International Journal of Pathogen Research", "International Journal of Plant & Soil Science",
-    "international journal of research and reports in dentistry", "International Journal of Research and Reports in Hematology",
-    "International Neuropsychiatric Disease Journal", "International Research Journal of Gastroenterology and Hepatology",
-    "International Research Journal of Oncology", "International Research Journal of Pure and Applied Chemistry",
-    "Journal of Advances in Biology & Biotechnology", "Journal of Advances in Food Science & Technology",
-    "Journal of Advances in Mathematics and Computer Science ", "Journal of Advances in Medicine and Medical Research",
-    "Journal of Advances in Microbiology", "Journal of Agriculture and Ecology Research International",
-    "Journal of Applied Chemical Science International", "Journal of Applied Life Sciences International", "Journal of Biochemistry International",
-    "Journal of Biology and Nature", "Journal of Case Reports in Medical Science", "Journal of Complementary and Alternative Medical Research",
+    "International Journal of Biochemistry Research & Review", "International Journal of Biochemistry Research & Review",
+    "International Journal of Environment and Climate Change", "International Journal of Hematology-Oncology and Stem Cell Research",
+    "International Journal of Medical and Pharmaceutical Case Reports", "International Journal of Pathogen Research",
+    "International Journal of Plant & Soil Science", "international journal of research and reports in dentistry",
+    "International Journal of Research and Reports in Hematology", "International Neuropsychiatric Disease Journal",
+    "International Research Journal of Gastroenterology and Hepatology", "International Research Journal of Oncology",
+    "International Research Journal of Pure and Applied Chemistry", "Journal of Advances in Biology & Biotechnology",
+    "Journal of Advances in Food Science & Technology", "Journal of Advances in Mathematics and Computer Science ",
+    "Journal of Advances in Medicine and Medical Research", "Journal of Advances in Microbiology",
+    "Journal of Agriculture and Ecology Research International", "Journal of Applied Chemical Science International",
+    "Journal of Applied Life Sciences International", "Journal of Biochemistry International", "Journal of Biology and Nature",
+    "Journal of Case Reports in Medical Science", "Journal of Complementary and Alternative Medical Research",
     "Journal of Economics and Trade", "Journal of Economics, Management and Trade", "Journal of Education, Society and Behavioural Science",
     "Journal of Engineering Research and Reports", "Journal of Experimental Agriculture International",
     "Journal of Geography, Environment and Earth Science International", "Journal of Global Ecology and Environment",
@@ -55,7 +56,7 @@ JOURNAL_LIST = [
 ]
 
 # =========================================================
-# ⚙️ ÉTAPE 2 : FONCTIONS D'INTERROGATION HAL (MODE GLOBAL)
+# ⚙️ ÉTAPE 2 : FONCTIONS D'ANALYSE
 # =========================================================
 
 @st.cache_data(ttl=3600)
@@ -194,52 +195,82 @@ def get_monthly_analysis(docs, start_date_str="2025-01-01"):
     return buf, monthly_counts.to_frame(name='Nb Dépôts')
 
 # =========================================================
+# ⚙️ FONCTION DE RAPPEL (CALLBACK)
+# =========================================================
+
+def select_all_journals():
+    """Fonction de rappel pour sélectionner toutes les revues dans le multiselect."""
+    st.session_state.multiselect_key = JOURNAL_LIST
+
+# =========================================================
 # 💻 ÉTAPE 3 : INTERFACE STREAMLIT
 # =========================================================
 
 def app():
-    st.set_page_config(layout="wide", page_title="Détection de dépôts HAL douteux")
-    st.title("🤖 Détection de dépôts HAL douteux")
+    st.set_page_config(layout="wide", page_title="Détection des Dépôts HAL Douteux")
+    st.title("🤖 Détection des Dépôts HAL Douteux (Bots)")
     st.markdown("---")
 
     # --- 1. Sélection des Revues ---
-    st.header("📝 Sélection des revues pour l'analyse")
-    st.info("Utilisez ce sélecteur pour définir le périmètre de la recherche de dépôts douteux sur HAL.")
+    st.header("📝 Sélection des Revues pour l'Analyse")
+    st.info("Utilisez les options ci-dessous pour définir le périmètre de la recherche de dépôts douteux sur HAL.")
     
-    # Gestion du state pour le bouton 'Tout sélectionner'
-    if 'selected_journals' not in st.session_state:
-        st.session_state.selected_journals = JOURNAL_LIST[:10]
+    # Initialisation de la sélection par défaut
+    if 'multiselect_key' not in st.session_state:
+        st.session_state.multiselect_key = JOURNAL_LIST[:10] 
 
-    if st.button("Sélectionner toutes les revues"):
-        st.session_state.selected_journals = JOURNAL_LIST
+    # 1a. Sélection dans la liste prédéfinie
+    st.subheader("1. Choisir dans la liste prédéfinie")
+
+    # Bouton 'Tout sélectionner' avec la fonction de rappel
+    st.button(
+        "Sélectionner toutes les revues", 
+        on_click=select_all_journals
+    )
         
     selected_journals = st.multiselect(
-        "Choisissez les revues à inclure dans la recherche :",
+        "Revues de la liste ciblée :",
         options=JOURNAL_LIST,
-        default=st.session_state.selected_journals,
-        key='selected_journals_multiselect' # Utiliser une clé différente pour le widget lui-même
+        key='multiselect_key'
     )
 
-    if not selected_journals:
-        st.warning("Veuillez sélectionner au moins une revue pour lancer l'analyse.")
-        
+    # 1b. Ajout de revues personnalisées
+    st.subheader("2. Ajouter des revues personnalisées")
+    custom_journals_text = st.text_area(
+        "Entrez les titres exacts des revues additionnelles (un titre par ligne ou séparés par une virgule) :",
+        height=100
+    )
+    
+    # Traitement des revues personnalisées pour les préparer à l'analyse
+    custom_journals = []
+    if custom_journals_text:
+        # Séparer par ligne, puis séparer par virgule, puis nettoyer les espaces
+        custom_journals_raw = custom_journals_text.replace('\n', ',').split(',')
+        custom_journals = [j.strip() for j in custom_journals_raw if j.strip()]
+    
+    # 2. Lancement de l'Analyse Globale
     st.markdown("---")
+    st.header("🔍 Lancement de l'Analyse sur l'Ensemble de HAL")
 
-    # --- 2. Lancement de l'Analyse Globale ---
-    st.header("🔍 Lancement de l'analyse")
-
+    # Combinaison des listes pour l'analyse
+    all_journals_to_analyze = set(selected_journals)
+    all_journals_to_analyze.update(custom_journals)
+    final_list_for_analysis = list(all_journals_to_analyze)
+    
+    # Message d'avertissement mis à jour
     st.warning(f"""
-    Attention : Vous avez sélectionné **{len(selected_journals)}** revue(s). 
-    L'opération peut prendre du temps car elle interroge l'API HAL pour chaque revue sélectionnée.
+    Attention : Vous allez analyser **{len(final_list_for_analysis)}** revue(s) unique(s) ({len(selected_journals)} sélectionnées + {len(custom_journals)} personnalisées). 
+    L'opération peut prendre du temps.
     """)
     
-    if st.button("Lancer l'Analyse Globale des Revues Sélectionnées", disabled=(not selected_journals)):
+    if st.button("Lancer l'Analyse Globale des Revues Sélectionnées", disabled=(not final_list_for_analysis)):
         
-        with st.spinner("Interrogation de l'API HAL..."):
-            docs = get_hal_publications_global(selected_journals)
+        with st.spinner("Interrogation de l'API HAL pour l'ensemble du dépôt..."):
+            # Passage de la liste finale à la fonction de recherche
+            docs = get_hal_publications_global(final_list_for_analysis)
 
         if not docs:
-            st.success(f"🎉 Aucune publication trouvée sur TOUT HAL pour les {len(selected_journals)} revues sélectionnées.")
+            st.success(f"🎉 Aucune publication trouvée sur TOUT HAL pour les {len(final_list_for_analysis)} revues sélectionnées.")
             return
 
         st.success(f"✅ **{len(docs)}** dépôt(s) trouvé(s) pour les revues sélectionnées.")
@@ -267,7 +298,7 @@ def app():
         st.markdown("---")
 
         # --- 4. Analyse Mensuelle (Pics d'Activité) ---
-        st.header("📈 Analyse temporelle des dépôts ")
+        st.header("📈 Analyse Temporelle des Dépôts (Pics d'Activité)")
         
         # Définition de la date de début pour le filtrage (Janvier 2025)
         START_DATE_FILTER = "2025-01-01"
@@ -278,7 +309,7 @@ def app():
         image_bytes, df_monthly = get_monthly_analysis(docs, start_date_str=START_DATE_FILTER)
         
         if image_bytes:
-            st.subheader("Nombre de dépôts par mois")
+            st.subheader("Nombre de Dépôts par Mois")
             st.image(image_bytes, caption=f'Historique des dépôts par mois depuis {START_DATE_FILTER}')
 
             st.subheader("Données Mensuelles Brutes")
@@ -286,17 +317,16 @@ def app():
 
             csv_monthly = df_monthly.to_csv(index=False).encode('utf-8')
             st.download_button(
-                label="Télécharger les données mensuelles (CSV)",
+                label="Télécharger les données Mensuelles (CSV)",
                 data=csv_monthly,
                 file_name=f'depots_mensuels_douteux_HAL_FILTRE.csv',
                 mime='text/csv',
             )
-        # La notification "Aucun dépôt trouvé..." est maintenant gérée dans get_monthly_analysis
         
         st.markdown("---")
 
         # --- 5. Liste des Publications (Détail) ---
-        st.header("📄 Liste des publications trouvées")
+        st.header("📄 Liste Complète des Publications Trouvées")
         
         data_for_df = []
         for doc in docs:
