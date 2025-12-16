@@ -72,14 +72,18 @@ def get_hal_publications_global(journals):
     
     status_text = st.empty()
     total_found = 0
+    MAX_LENGTH = 50 # Définition de la longueur maximale en dehors de la boucle
 
     for i, journal_title in enumerate(journals):
-	MAX_LENGTH = 50
+        
+        # --- LOGIQUE DE TRONCATURE DU TITRE CORRECTEMENT INDENTÉE ---
         display_title = journal_title
         if len(journal_title) > MAX_LENGTH:
-            display_title = journal_title[:MAX_LENGTH-3] + "..." # Tronquer et ajouter '...'        
-
-	status_text.text(f"Recherche dans TOUT HAL... (Revue {i+1}/{len(journals)}: {journal_title})") 
+            display_title = journal_title[:MAX_LENGTH-3] + "..." 
+        # -----------------------------------------------------------
+            
+        # Utilisation de display_title pour le message de statut
+        status_text.text(f"Recherche dans TOUT HAL... (Revue {i+1}/{len(journals)}: {display_title})") 
 
         query = f'journalTitle_s:("{journal_title}")'
         params = {
@@ -110,7 +114,6 @@ def get_hal_publications_global(journals):
     
     status_text.success(f"Recherche globale terminée. {len(all_docs)} dépôt(s) récupéré(s) (parmi {total_found} trouvés) pour les {len(journals)} revues sélectionnées dans tout HAL.")
     return all_docs
-
 
 def get_contributors_analysis(docs):
     """Analyse les contributeurs à partir des documents HAL."""
