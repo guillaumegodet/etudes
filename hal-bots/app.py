@@ -74,7 +74,12 @@ def get_hal_publications_global(journals):
     total_found = 0
 
     for i, journal_title in enumerate(journals):
-        status_text.text(f"Recherche dans TOUT HAL... (Revue {i+1}/{len(journals)}: {journal_title})") 
+	MAX_LENGTH = 50
+        display_title = journal_title
+        if len(journal_title) > MAX_LENGTH:
+            display_title = journal_title[:MAX_LENGTH-3] + "..." # Tronquer et ajouter '...'        
+
+	status_text.text(f"Recherche dans TOUT HAL... (Revue {i+1}/{len(journals)}: {journal_title})") 
 
         query = f'journalTitle_s:("{journal_title}")'
         params = {
@@ -207,12 +212,12 @@ def select_all_journals():
 # =========================================================
 
 def app():
-    st.set_page_config(layout="wide", page_title="Détection des Dépôts HAL Douteux")
-    st.title("🤖 Détection des Dépôts HAL Douteux (Bots)")
+    st.set_page_config(layout="wide", page_title="Détection de dépôts HAL douteux")
+    st.title("🤖 Détection de dépôts HAL douteux")
     st.markdown("---")
 
     # --- 1. Sélection des Revues ---
-    st.header("📝 Sélection des Revues pour l'Analyse")
+    st.header("📝 Sélection des revues pour l'analyse")
     st.info("Utilisez les options ci-dessous pour définir le périmètre de la recherche de dépôts douteux sur HAL.")
     
     # Initialisation de la sélection par défaut
@@ -235,7 +240,7 @@ def app():
     )
 
     # 1b. Ajout de revues personnalisées
-    st.subheader("2. Ajouter des revues personnalisées")
+    st.subheader("2. Ajouter d'autres titres de revues")
     custom_journals_text = st.text_area(
         "Entrez les titres exacts des revues additionnelles (un titre par ligne ou séparés par une virgule) :",
         height=100
@@ -248,9 +253,9 @@ def app():
         custom_journals_raw = custom_journals_text.replace('\n', ',').split(',')
         custom_journals = [j.strip() for j in custom_journals_raw if j.strip()]
     
-    # 2. Lancement de l'Analyse Globale
+    # 2. Lancement de l'analyse
     st.markdown("---")
-    st.header("🔍 Lancement de l'Analyse sur l'Ensemble de HAL")
+    st.header("🔍 Analyse des dépôts")
 
     # Combinaison des listes pour l'analyse
     all_journals_to_analyze = set(selected_journals)
@@ -263,9 +268,9 @@ def app():
     L'opération peut prendre du temps.
     """)
     
-    if st.button("Lancer l'Analyse Globale des Revues Sélectionnées", disabled=(not final_list_for_analysis)):
+    if st.button("Lancer l'analyse des revues sélectionnées", disabled=(not final_list_for_analysis)):
         
-        with st.spinner("Interrogation de l'API HAL pour l'ensemble du dépôt..."):
+        with st.spinner("Interrogation de l'API HAL..."):
             # Passage de la liste finale à la fonction de recherche
             docs = get_hal_publications_global(final_list_for_analysis)
 
@@ -277,7 +282,7 @@ def app():
         st.markdown("---")
         
         # --- 3. Analyse des Contributeurs (Détection de Bot) ---
-        st.header("👤 Analyse des Contributeurs (Détection de Bot)")
+        st.header("👤 Analyse des contributeurs (détection de bots)")
         
         df_contributors = get_contributors_analysis(docs)
         df_sorted_contributors = df_contributors.sort_values(by='Nb Contributions', ascending=False)
@@ -289,7 +294,7 @@ def app():
 
         csv_cont = df_sorted_contributors.to_csv(index=False).encode('utf-8')
         st.download_button(
-            label="Télécharger les données des Contributeurs (CSV)",
+            label="Télécharger les données des contributeurs (CSV)",
             data=csv_cont,
             file_name=f'contributeurs_douteux_HAL_FILTRE.csv',
             mime='text/csv',
@@ -298,7 +303,7 @@ def app():
         st.markdown("---")
 
         # --- 4. Analyse Mensuelle (Pics d'Activité) ---
-        st.header("📈 Analyse Temporelle des Dépôts (Pics d'Activité)")
+        st.header("📈 Analyse Temporelle des dépôts (pics d'activité)")
         
         # Définition de la date de début pour le filtrage (Janvier 2025)
         START_DATE_FILTER = "2025-01-01"
@@ -326,7 +331,7 @@ def app():
         st.markdown("---")
 
         # --- 5. Liste des Publications (Détail) ---
-        st.header("📄 Liste Complète des Publications Trouvées")
+        st.header("📄 Liste des publications concernées")
         
         data_for_df = []
         for doc in docs:
